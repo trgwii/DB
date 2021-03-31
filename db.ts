@@ -1,0 +1,110 @@
+import { getNBytes } from "./binary.ts";
+
+import type { Inner } from "./types.ts";
+import { Big, DateTime, Num, Text } from "./types.ts";
+
+import { id, num } from "./id.ts";
+
+type Field = Big | Num | DateTime | Text;
+
+export class DB<
+  Schema extends Record<string, Field>,
+  Options extends { stringIds: boolean },
+> {
+  readonly #handle: Promise<Deno.File>;
+  #size = 0;
+  #rowSize = 0;
+  #offsets: (readonly [string, Field, number])[] = [];
+  constructor(
+    public readonly path: string,
+    public readonly schema: Schema,
+    public readonly options: Options,
+  ) {
+    this.#handle = Deno.stat(path)
+      .then((s) => this.#size = s.size, () => this.#size = 0)
+      .then(() => {
+        let rowSize = 0;
+        for (const p of Object.values(this.schema)) {
+          rowSize += p.size();
+        }
+        this.#rowSize = rowSize;
+        this.#offsets = Object.keys(this.schema)
+          .map((k) => [k, this.schema[k]] as const)
+          .map(([k, p]) => [k, p, p.size()] as const)
+          .map(([k, p], i, arr) =>
+            [k, p, arr.slice(0, i).reduce((acc, x) => acc + x[2], 0)] as const
+          );
+      })
+      .then(() => Deno.open(path, { create: true, read: true, write: true }));
+  }
+  async seek(n: number) {
+    const handle = await this.#handle;
+    await handle.seek(n, Deno.SeekMode.Start);
+  }
+  invalidTypeError(field: string, expected: string, got: string) {
+    return new TypeError(
+      `Invalid type for ${field}: expected ${expected}, got: ${got}`,
+    );
+  }
+  async insert(data: { [K in keyof Schema]: Inner<Schema[K]> }) {
+    const handle = await this.#handle;
+    await handle.seek(this.#size, Deno.SeekMode.Start);
+    const row = new Uint8Array(this.#rowSize);
+    let offset = 0;
+    for (const [k, p] of Object.entries(this.schema)) {
+      const value = data[k];
+      offset += p.pack(value as unknown as never, row.subarray(offset));
+    }
+    await Deno.writeAll(handle, row);
+    const rowId = this.#size / this.#rowSize;
+    this.#size += row.byteLength;
+    return (this.options.stringIds
+      ? id(rowId)
+      : rowId) as Options["stringIds"] extends true ? string : number;
+  }
+  async byId(id: Options["stringIds"] extends true ? string : number) {
+    const handle = await this.#handle;
+    const seek = this.#rowSize *
+      ((this.options.stringIds ? num(id as string) : id) as number);
+    console.log(seek);
+    await handle.seek(seek, Deno.SeekMode.Start);
+    return this.fetchRow(id);
+  }
+  async one(data: { [K in keyof Schema]?: Inner<Schema[K]> }) {
+    for await (const row of this.all(data)) {
+      return row;
+    }
+  }
+  async *all(data: { [K in keyof Schema]?: Inner<Schema[K]> }) {
+    const handle = await this.#handle;
+    const offsets = this.#offsets.filter((x) => x[0] in data);
+
+    const rows = this.#size / this.#rowSize;
+    await handle.seek(0, Deno.SeekMode.Start);
+    row:
+    for (let i = 0; i < rows; i++) {
+      const offset = i * this.#rowSize;
+      for (const [k, p, localOffset] of offsets) {
+        await handle.seek(offset + localOffset, Deno.SeekMode.Start);
+        const stored = await getNBytes(handle, p.size());
+        const buf = new Uint8Array(p.size());
+        p.pack(data[k] as never, buf);
+        for (let i = 0; i < buf.length; i++) {
+          if (buf[i] !== stored[i]) {
+            continue row;
+          }
+        }
+      }
+      await handle.seek(offset, Deno.SeekMode.Start);
+      yield this.fetchRow(this.options.stringIds ? id(i) : i);
+    }
+  }
+  async fetchRow(_id?: string | number) {
+    const handle = await this.#handle;
+    const result: Record<string, unknown> = { _id };
+    for (const [k, p] of Object.entries(this.schema)) {
+      result[k] = await p.read(handle);
+    }
+    return result as { [K in keyof Schema]: Inner<Schema[K]> };
+  }
+}
