@@ -1,11 +1,11 @@
-import { DB } from "./db.ts";
-import { Big, DateTime, Text } from "./types.ts";
+import { DB } from "../db.ts";
+import { Big, DateTime, InlineText } from "../types.ts";
 
 const [path] = Deno.args;
 
 const db = new DB(path, {
   created: new DateTime(),
-  username: new Text(255),
+  username: new InlineText(255),
 }, { stringIds: false });
 
 const firstRun = await Deno.stat(path).then(() => false, () => true);

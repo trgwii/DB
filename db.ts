@@ -1,27 +1,27 @@
+import { ensureDir } from "https://deno.land/std@0.91.0/fs/ensure_dir.ts";
 import { getNBytes } from "./binary.ts";
-
-import type { Inner } from "./types.ts";
-import { Big, DateTime, Num, Text } from "./types.ts";
-
+import type { Field, Inner } from "./types.ts";
 import { id, num } from "./id.ts";
 
-type Field = Big | Num | DateTime | Text;
-
 export class DB<
-  Schema extends Record<string, Field>,
+  Schema extends Record<string, Field<unknown>>,
   Options extends { stringIds: boolean },
 > {
   readonly #handle: Promise<Deno.File>;
   #size = 0;
   #rowSize = 0;
-  #offsets: (readonly [string, Field, number])[] = [];
+  #offsets: (readonly [string, Field<unknown>, number])[] = [];
   constructor(
-    public readonly path: string,
+    public readonly name: string,
     public readonly schema: Schema,
     public readonly options: Options,
   ) {
-    this.#handle = Deno.stat(path)
-      .then((s) => this.#size = s.size, () => this.#size = 0)
+    const filePath = `${name}/data.db`;
+    this.#handle = Deno.stat(filePath)
+      .then((s) => this.#size = s.size, async () => {
+        await ensureDir(name);
+        return this.#size = 0;
+      })
       .then(() => {
         let rowSize = 0;
         for (const p of Object.values(this.schema)) {
@@ -35,7 +35,9 @@ export class DB<
             [k, p, arr.slice(0, i).reduce((acc, x) => acc + x[2], 0)] as const
           );
       })
-      .then(() => Deno.open(path, { create: true, read: true, write: true }));
+      .then(() =>
+        Deno.open(filePath, { create: true, read: true, write: true })
+      );
   }
   async seek(n: number) {
     const handle = await this.#handle;
@@ -53,7 +55,7 @@ export class DB<
     let offset = 0;
     for (const [k, p] of Object.entries(this.schema)) {
       const value = data[k];
-      offset += p.pack(value as unknown as never, row.subarray(offset));
+      offset += await p.pack(value as unknown as never, row.subarray(offset));
     }
     await Deno.writeAll(handle, row);
     const rowId = this.#size / this.#rowSize;
@@ -66,7 +68,6 @@ export class DB<
     const handle = await this.#handle;
     const seek = this.#rowSize *
       ((this.options.stringIds ? num(id as string) : id) as number);
-    console.log(seek);
     await handle.seek(seek, Deno.SeekMode.Start);
     return this.fetchRow(id);
   }
@@ -88,7 +89,7 @@ export class DB<
         await handle.seek(offset + localOffset, Deno.SeekMode.Start);
         const stored = await getNBytes(handle, p.size());
         const buf = new Uint8Array(p.size());
-        p.pack(data[k] as never, buf);
+        await p.pack(data[k] as never, buf);
         for (let i = 0; i < buf.length; i++) {
           if (buf[i] !== stored[i]) {
             continue row;
