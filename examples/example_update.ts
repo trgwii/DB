@@ -34,9 +34,13 @@ for await (const row of users.all({})) {
   console.log(row);
 }
 
-const updated = await users.update({ username: 'Jake' }, { username: 'Thomas' })
+let updated = 1
+for await (const id of users.update({ username: 'Jake' }, { username: 'Thomas' })) {
+  updated =+ 1
+  console.log(`ID: ${id}`)
+}
 
-console.log(`Updated ${updated.length} documents:`)
+console.log(`Updated ${updated} documents:`)
 
 for await (const row of users.all({ username: 'Thomas' })) {
   console.log(row);

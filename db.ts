@@ -64,10 +64,8 @@ export class DB<
       ? id(rowId)
       : rowId) as Options["stringIds"] extends true ? string : number;
   }
-  async update(query: { [K in keyof Schema]?: Inner<Schema[K]> }, data: { [K in keyof Schema]?: Inner<Schema[K]>}) {
+  async *update(query: { [K in keyof Schema]?: Inner<Schema[K]> }, data: { [K in keyof Schema]?: Inner<Schema[K]>}) {
     const handle = await this.#handle;
-    //const updated: { seek: number, newRow: Uint8Array }[] = [];  
-    const updated: Array< number | string | unknown> = [];  
     for await (const row of this.all(query)) {
       const newRow = new Uint8Array(this.#rowSize);
       const { _id: id } = row;
@@ -77,12 +75,11 @@ export class DB<
       for (const [k, p] of Object.entries(this.schema)) {
         const value = data[k] || row[k];
         offset += await p.pack(value as unknown as never, newRow.subarray(offset))
-      }  
+      }      
       await handle.seek(seek, Deno.SeekMode.Start);
       await Deno.writeAll(handle, newRow);
-      updated.push(id);
+      yield id
     }
-    return updated
   }
   async updateOne(query: { [K in keyof Schema]?: Inner<Schema[K]> }, data: { [K in keyof Schema]?: Inner<Schema[K]>}) {
     const handle = await this.#handle;
