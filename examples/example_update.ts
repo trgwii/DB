@@ -36,7 +36,7 @@ for await (const row of users.all({})) {
 
 const updated = await users.update({ username: 'Jake' }, { username: 'Thomas' })
 
-console.log(`Updated ${updated} documents:`)
+console.log(`Updated ${updated.length} documents:`)
 
 for await (const row of users.all({ username: 'Thomas' })) {
   console.log(row);
@@ -44,7 +44,7 @@ for await (const row of users.all({ username: 'Thomas' })) {
 
 const updatedOnce = await users.updateOne({ username: 'Thomas' }, { username: 'Jake' })
 
-console.log(`Updated document ${updatedOnce}:`)
+console.log(`Updated document. ID: ${updatedOnce}:`)
 
 const user = await users.one({ username: 'Jake' })
 
