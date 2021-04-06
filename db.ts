@@ -64,6 +64,43 @@ export class DB<
       ? id(rowId)
       : rowId) as Options["stringIds"] extends true ? string : number;
   }
+  async update(query: { [K in keyof Schema]?: Inner<Schema[K]> }, data: { [K in keyof Schema]?: Inner<Schema[K]>}) {
+    const handle = await this.#handle;
+    //const updated: { seek: number, newRow: Uint8Array }[] = [];  
+    let updated = 0;  
+    for await (const row of this.all(query)) {
+      const newRow = new Uint8Array(this.#rowSize);
+      const { _id: id } = row;
+      const seek = this.#rowSize *
+      ((this.options.stringIds ? num(id as string) : id) as number);
+      let offset = 0;
+      for (const [k, p] of Object.entries(this.schema)) {
+        const value = data[k] || row[k];
+        offset += await p.pack(value as unknown as never, newRow.subarray(offset))
+        updated+=1;
+      }      
+      await handle.seek(seek, Deno.SeekMode.Start);
+      await Deno.writeAll(handle, newRow);
+    }
+    return updated
+  }
+  async updateOne(query: { [K in keyof Schema]?: Inner<Schema[K]> }, data: { [K in keyof Schema]?: Inner<Schema[K]>}) {
+    const handle = await this.#handle;
+    const row = await this.one(query);
+    if (typeof row === 'undefined') return 0;
+    const newRow = new Uint8Array(this.#rowSize);
+    const { _id: id } = row;
+    let offset = 0;
+    for (const [k, p] of Object.entries(this.schema)) {
+      const value = data[k] || row[k];
+      offset += await p.pack(value as unknown as never, newRow.subarray(offset))
+    }
+    const seek = this.#rowSize *
+      ((this.options.stringIds ? num(id as string) : id) as number);  
+    await handle.seek(seek, Deno.SeekMode.Start);
+    await Deno.writeAll(handle, newRow);
+    return id;
+  }
   async byId(id: Options["stringIds"] extends true ? string : number) {
     const handle = await this.#handle;
     const seek = this.#rowSize *
@@ -78,7 +115,7 @@ export class DB<
   }
   async *all(data: { [K in keyof Schema]?: Inner<Schema[K]> }) {
     const handle = await this.#handle;
-    const offsets = this.#offsets.filter((x) => x[0] in data);
+    const offsets = this.#offsets.filter((x) => x[0] in data); 
 
     const rows = this.#size / this.#rowSize;
     await handle.seek(0, Deno.SeekMode.Start);
