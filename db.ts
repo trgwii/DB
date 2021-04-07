@@ -93,17 +93,17 @@ export class DB<
     const handle = await this.#handle;
     const row = await this.one(query);
     if (typeof row === 'undefined') return 0;
-    const newRow = new Uint8Array(this.#rowSize);
     const { _id: id } = row;
-    let offset = 0;
-    for (const [k, p] of Object.entries(this.schema)) {
-      const value = data[k] || row[k];
-      offset += await p.pack(value as unknown as never, newRow.subarray(offset))
-    }
     const seek = this.#rowSize *
-      ((this.options.stringIds ? num(id as string) : id) as number);  
-    await handle.seek(seek, Deno.SeekMode.Start);
-    await Deno.writeAll(handle, newRow);
+      ((this.options.stringIds ? num(id as string) : id) as number);
+    for (const k of Object.keys(data)) {
+      const computed = await this.computeOffset(seek, k);
+      const value = data[k]
+      const chunk = new Uint8Array(computed.size)
+      await this.schema[k].pack(value as unknown as never, chunk)
+      await handle.seek(computed.offset, Deno.SeekMode.Start);
+      await Deno.writeAll(handle, chunk);
+    }
     return id;
   }
   async byId(id: Options["stringIds"] extends true ? string : number) {
