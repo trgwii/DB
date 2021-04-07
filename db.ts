@@ -76,6 +76,7 @@ export class DB<
     for await (const id of this.update(query, data)) {
       return id;
     }
+    return null
   }
   async *update(query: { [K in keyof Schema]?: Inner<Schema[K]> }, data: { [K in keyof Schema]?: Inner<Schema[K]>}) {
     const handle = await this.#handle;
@@ -105,6 +106,7 @@ export class DB<
     for await (const row of this.all(data)) {
       return row;
     }
+    return null
   }
   async *all(data: { [K in keyof Schema]?: Inner<Schema[K]> }) {
     const handle = await this.#handle;
