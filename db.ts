@@ -43,6 +43,14 @@ export class DB<
     const handle = await this.#handle;
     await handle.seek(n, Deno.SeekMode.Start);
   }
+  async computeOffset(offset: number, f: string) {
+    for (const [k, p] of Object.entries(this.schema)) {
+      const size = p.size()
+      if (f === k) return { offset, size}
+      offset += size;
+    }
+    throw new Error(`Invalid key ${f}: expected: K in keyof Schema`);
+  }
   invalidTypeError(field: string, expected: string, got: string) {
     return new TypeError(
       `Invalid type for ${field}: expected ${expected}, got: ${got}`,
@@ -67,17 +75,17 @@ export class DB<
   async *update(query: { [K in keyof Schema]?: Inner<Schema[K]> }, data: { [K in keyof Schema]?: Inner<Schema[K]>}) {
     const handle = await this.#handle;
     for await (const row of this.all(query)) {
-      const newRow = new Uint8Array(this.#rowSize);
       const { _id: id } = row;
       const seek = this.#rowSize *
       ((this.options.stringIds ? num(id as string) : id) as number);
-      let offset = 0;
-      for (const [k, p] of Object.entries(this.schema)) {
-        const value = data[k] || row[k];
-        offset += await p.pack(value as unknown as never, newRow.subarray(offset))
-      }      
-      await handle.seek(seek, Deno.SeekMode.Start);
-      await Deno.writeAll(handle, newRow);
+      for (const k of Object.keys(data)) {
+        const computed = await this.computeOffset(seek, k);
+        const value = data[k]
+        const chunk = new Uint8Array(computed.size)
+        await this.schema[k].pack(value as unknown as never, chunk)
+        await handle.seek(computed.offset, Deno.SeekMode.Start);
+        await Deno.writeAll(handle, chunk);
+      }
       yield id
     }
   }

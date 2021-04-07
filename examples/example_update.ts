@@ -34,9 +34,9 @@ for await (const row of users.all({})) {
   console.log(row);
 }
 
-let updated = 1
+let updated = 0;
 for await (const id of users.update({ username: 'Jake' }, { username: 'Thomas' })) {
-  updated =+ 1
+  updated += 1
   console.log(`ID: ${id}`)
 }
 
