@@ -1,5 +1,6 @@
 import { DB } from "../db.ts";
 import { Num, InlineText } from "../types.ts";
+import * as Colors from 'https://deno.land/std/fmt/colors.ts'
 const users = new DB("users", {
   age: new Num("uint32"),
   username: new InlineText(255)
@@ -28,33 +29,37 @@ if (await Deno.stat("users/data.db").then(() => false, () => true)) {
 
 }
 
-console.log('Input:')
+console.log(Colors.blue('Input:'))
 
 for await (const row of users.all({})) {
   console.log(row);
 }
 
+console.log(Colors.blue('Updating multiple usernames of collection from "Jake" to "Thomas":'))
+
 let updated = 0;
 for await (const id of users.update({ username: 'Jake' }, { username: 'Thomas' })) {
   updated += 1
-  console.log(`ID: ${id}`)
+  console.log(Colors.green(`Updated document - ID: ${id}`))
 }
-
-console.log(`Updated ${updated} documents:`)
 
 for await (const row of users.all({ username: 'Thomas' })) {
   console.log(row);
 }
 
-const updatedOnce = await users.updateOne({ username: 'Thomas' }, { username: 'Jake' })
+console.log(Colors.green(`Updated ${updated} documents.`))
 
-console.log(`Updated document. ID: ${updatedOnce}:`)
+console.log(Colors.blue('Updating one username of collection from "Thomas" to: "Jake":'))
+
+const updatedOnce = await users.updateOne({ username: 'Thomas' }, { username: 'Jake' })
 
 const user = await users.one({ username: 'Jake' })
 
 console.log(user)
 
-console.log('Results:')
+console.log(Colors.green(`Updated document - ID: ${updatedOnce}:`))
+
+console.log(Colors.blue('Output:'))
 
 for await (const row of users.all({})) {
   console.log(row);
