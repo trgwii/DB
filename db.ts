@@ -90,21 +90,9 @@ export class DB<
     }
   }
   async updateOne(query: { [K in keyof Schema]?: Inner<Schema[K]> }, data: { [K in keyof Schema]?: Inner<Schema[K]>}) {
-    const handle = await this.#handle;
-    const row = await this.one(query);
-    if (typeof row === 'undefined') return 0;
-    const { _id: id } = row;
-    const seek = this.#rowSize *
-      ((this.options.stringIds ? num(id as string) : id) as number);
-    for (const k of Object.keys(data)) {
-      const computed = await this.computeOffset(seek, k);
-      const value = data[k]
-      const chunk = new Uint8Array(computed.size)
-      await this.schema[k].pack(value as unknown as never, chunk)
-      await handle.seek(computed.offset, Deno.SeekMode.Start);
-      await Deno.writeAll(handle, chunk);
+    for await (const id of this.update(query, data)) {
+      return id;
     }
-    return id;
   }
   async byId(id: Options["stringIds"] extends true ? string : number) {
     const handle = await this.#handle;
